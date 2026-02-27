@@ -21,10 +21,10 @@ Bak = Kotlin's elegance + Go's simplicity + Rust's safety ideas, transpiled to G
 | Category             | Features                                                                |
 |----------------------|-------------------------------------------------------------------------|
 | **Safety**           | Non-null by default, `T?` nullable, `?.`, `!!`, `?:` (elvis)           |
-| **Option type**      | `Option<T>` = `Some(value)` / `None`, destructuring, pattern matching   |
-| **Result type**      | `Result<T, E>` = `Ok(value)` / `Err(error)`, `?` early-return operator  |
+| **Option type**      | `Option<T>` = `Some`/`None` for FP composition; bridges freely with `T?` |
+| **Result type**      | `Result<T, E>` primary (map/flatMap/fold/recover/`?`); `Either<L,R>` in stdlib |
 | **Data classes**     | Auto `Equal()`, `String()`, `Copy()`, destructuring                     |
-| **Traits**           | Interfaces with default method implementations                         |
+| **Interfaces**       | `interface` keyword with default method implementations (same as Go/Kotlin) |
 | **Sealed classes**   | Closed hierarchies, exhaustive `when` matching                          |
 | **Pattern matching** | `when (x) { is Type -> ... }` with smart casts                         |
 | **Functions**        | Default parameters, expression body, extension functions                |
@@ -51,7 +51,7 @@ import "net/http"
 
 data class User(val name: String, val age: Int)
 
-trait Greetable {
+interface Greetable {
     fun greet(): String
     fun Formal(): String = "Dear ${greet()}"  // uppercase = exported
 }
@@ -113,7 +113,7 @@ fun main() {
 | Bak construct         | Compiles to Go                                          |
 |-----------------------|---------------------------------------------------------|
 | `data class`          | struct + `Equal()`, `String()`, `Copy()` methods        |
-| `trait`               | interface (+ hidden struct for default impls)            |
+| `interface`           | Go interface (+ hidden struct for default impls)         |
 | `sealed class`        | interface + unexported marker method                    |
 | `when (x) { is ... }` | `switch v := x.(type) { case ... }`                    |
 | `Result<T, E>`        | `(T, error)` at Go boundary, wrapped internally         |
@@ -170,19 +170,21 @@ Each milestone = working compiler + tests. Pipeline always green.
 
 ### Milestone 3: Null Safety + Option
 - `T?` nullable types, `?.`, `!!`, `?:` operators
-- `Option<T>` = `Some(value)` / `None`
+- `Option<T>` = `Some(value)` / `None` with FP API (map/flatMap/filter)
+- Bridge: `T?.toOption()` and `Option<T>.toNullable()`
 - Pattern matching on Option with destructuring
 
-### Milestone 4: Traits + Sealed Classes + Pattern Matching
-- `trait` with default impls → Go interfaces
+### Milestone 4: Interfaces + Sealed Classes + Pattern Matching
+- `interface` with default impls → Go interfaces
 - `sealed class` → closed type hierarchy
 - `when` expression with exhaustive `is` checks
 - Smart casts after `is` narrowing
 
-### Milestone 5: Result + Error Handling
-- `Result<T, E>` = `Ok` / `Err`
+### Milestone 5: Result + Error Handling + Either
+- `Result<T, E>` = `Ok` / `Err` with full API (map/flatMap/mapError/recover/fold)
 - `?` operator for early return on error
 - Go interop: auto-wrap `(T, error)` → `Result<T, E>`
+- `Either<L, R>` in stdlib for generic sum types (not error-specific)
 
 ### Milestone 6: Extension Functions + FP
 - Extension functions on any type (including Go stdlib)

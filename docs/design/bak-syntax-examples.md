@@ -54,6 +54,9 @@ val upperName = maybeName?.uppercase() ?: "UNKNOWN"
 
 ## 3. Option Type (Some / None)
 
+Bak has **both** `T?` (section 2) and `Option<T>`. Use `T?` for simple null checks,
+`Option<T>` for FP composition. They convert freely.
+
 ```kotlin
 // Explicit Option type — like Rust's Option<T>
 val present: Option<Int> = Some(42)
@@ -65,16 +68,30 @@ when (present) {
     is None -> println("Nothing here")
 }
 
-// Mapping over Option
+// Mapping over Option (FP composition — the reason Option exists alongside T?)
 val doubled = present.map { it * 2 }        // Some(84)
 val nothing = absent.map { it * 2 }          // None
+val trimmed = present.filter { it > 10 }     // Some(42)
+val chained = present.flatMap { lookupName(it) }  // Option<String>
 
 // Unwrap with default
 val value = present.unwrapOr(0)              // 42
 val fallback = absent.unwrapOr(0)            // 0
 
-// Option from nullable
-val opt: Option<String> = Option.from(maybeName)
+// --- Bridge between T? and Option<T> ---
+
+// T? → Option<T>
+val name: String? = "Alice"
+val opt: Option<String> = name.toOption()    // Some("Alice")
+val opt2: Option<String> = null.toOption()   // None
+
+// Option<T> → T?
+val nullable: String? = opt.toNullable()     // "Alice"
+val nullable2: String? = None.toNullable()   // null
+
+// When to use which:
+//   T?       → simple null checks, interop with Go, ?./?:/?!! operators
+//   Option<T> → FP chains (map/flatMap/filter), domain modeling, pattern matching
 
 // Nested destructuring
 data class Config(val timeout: Option<Int>, val retries: Option<Int>)
@@ -90,6 +107,9 @@ fun ApplyConfig(config: Config) {
 ---
 
 ## 4. Result Type and Error Handling
+
+`Result<T, E>` is Bak's primary error handling mechanism. For generic sum types,
+`Either<L, R>` is available in the standard library.
 
 ```kotlin
 // Result<T, E> — Ok or Err
@@ -111,12 +131,30 @@ fun LoadConfig(path: String): Result<Config, AppError> {
     return Ok(validated)
 }
 
-// Chaining Results
-fun ProcessData(input: String): Result<Output, Error> {
-    return Parse(input)
-        .map { Transform(it) }
-        .flatMap { Validate(it) }
-}
+// --- Result API (full FP operations) ---
+
+val result: Result<User, DBError> = FindUser(42)
+
+// Transform the success value
+result.map { it.name }                          // Result<String, DBError>
+
+// Chain operations that can fail
+result.flatMap { Validate(it) }                 // Result<ValidUser, DBError>
+
+// Transform the error type
+result.mapError { AppError.from(it) }           // Result<User, AppError>
+
+// Recover from error with a default
+result.recover { defaultUser }                  // User (unwrapped)
+
+// Fold — handle both cases
+result.fold(
+    onOk  = { println("Found: ${it.name}") },
+    onErr = { println("Failed: ${it.message}") }
+)
+
+// Get value or default
+result.getOrElse { defaultUser }                // User
 
 // Go interop — Go's (T, error) auto-wraps to Result<T, E>
 import "os"
@@ -124,6 +162,43 @@ import "os"
 fun ReadGoFile(path: String): Result<ByteArray, Error> {
     return os.ReadFile(path)  // Go returns ([]byte, error) → auto-wrapped
 }
+```
+
+---
+
+## 4b. Either Type (Standard Library)
+
+`Either<L, R>` is a generic sum type available in stdlib. Use `Result` for errors,
+`Either` for when both sides are valid values (not error cases).
+
+```kotlin
+import "bak/either"
+
+// Either for non-error disjunctions
+fun ParseInput(raw: String): Either<Int, String> {
+    val asInt = raw.toIntOrNull()
+    return if (asInt != null) Either.left(asInt) else Either.right(raw)
+}
+
+// Full Either API
+val parsed: Either<Int, String> = ParseInput("hello")
+
+parsed.fold(
+    ifLeft  = { println("Got number: $it") },
+    ifRight = { println("Got text: $it") }
+)
+
+parsed.map { it.uppercase() }                   // Either<Int, String> — maps right
+parsed.mapLeft { it * 2 }                       // Either<Int, String> — maps left
+parsed.bimap(
+    leftOp  = { it * 2 },
+    rightOp = { it.uppercase() }
+)
+parsed.swap()                                   // Either<String, Int>
+
+// Convert between Result and Either
+val asResult: Result<String, Int> = parsed.toResult()
+val asEither: Either<DBError, User> = result.toEither()
 ```
 
 ---
@@ -220,23 +295,26 @@ val (street, city, zip) = address
 
 ---
 
-## 8. Traits
+## 8. Interfaces (with Default Implementations)
+
+Bak uses the `interface` keyword (same as Go and Kotlin), but unlike Go,
+Bak interfaces support default method implementations.
 
 ```kotlin
-// Basic trait (compiles to Go interface)
-trait Drawable {
+// Basic interface (compiles directly to Go interface)
+interface Drawable {
     fun Draw()
     fun BoundingBox(): Rect
 }
 
-// Trait with default implementation
-trait Serializable {
+// Interface with default implementation
+interface Serializable {
     fun Serialize(): ByteArray
     fun ContentType(): String = "application/json"  // default impl
     fun SerializeToString(): String = String(Serialize())  // uses other method
 }
 
-// Implementing a trait
+// Implementing an interface
 data class Circle(val x: Float, val y: Float, val radius: Float) : Drawable {
     override fun Draw() {
         // drawing logic
@@ -246,7 +324,7 @@ data class Circle(val x: Float, val y: Float, val radius: Float) : Drawable {
     }
 }
 
-// Multiple traits
+// Multiple interfaces
 data class Widget(val id: String) : Drawable, Serializable {
     override fun Draw() { /* ... */ }
     override fun BoundingBox() = Rect(0, 0, 100, 50)
@@ -254,12 +332,12 @@ data class Widget(val id: String) : Drawable, Serializable {
     // ContentType() uses default: "application/json"
 }
 
-// Trait as parameter type
+// Interface as parameter type
 fun Render(item: Drawable) {
     item.Draw()
 }
 
-// Trait bounds on generics
+// Interface bounds on generics
 fun <T : Serializable> Save(item: T) {
     val bytes = item.Serialize()
     WriteToFile(bytes)
@@ -480,14 +558,14 @@ data class Pair<A, B>(val first: A, val second: B)
 val pair = Pair("age", 30)
 val (key, value) = pair  // destructuring
 
-// Generic trait
-trait Repository<T> {
+// Generic interface
+interface Repository<T> {
     fun FindById(id: String): Result<T, Error>
     fun Save(entity: T): Result<Unit, Error>
     fun Delete(id: String): Result<Unit, Error>
 }
 
-// Implementing generic trait
+// Implementing generic interface
 data class UserRepo(val db: Database) : Repository<User> {
     override fun FindById(id: String): Result<User, Error> {
         return db.Query("SELECT * FROM users WHERE id = ?", id)?
@@ -749,12 +827,12 @@ data class User(val Name: String, val Email: String)
 fun validateEmail(email: String): Boolean { /* ... */ }
 data class cache(val entries: Map<String, Any>)
 
-// Traits follow the same rule
-trait Exportable {       // exported trait
+// Interfaces follow the same rule
+interface Exportable {       // exported interface
     fun Export(): ByteArray
 }
 
-trait internal {         // unexported trait
+interface internal {         // unexported interface
     fun setup()
 }
 ```
@@ -817,7 +895,7 @@ sealed class TodoError {
 
 // --- Repository ---
 
-trait TodoRepository {
+interface TodoRepository {
     fun FindById(id: String): Result<Todo, TodoError>
     fun FindAll(): Result<List<Todo>, TodoError>
     fun Save(todo: Todo): Result<Todo, TodoError>
