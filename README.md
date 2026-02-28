@@ -36,6 +36,13 @@ If it hasn't already worked at scale in a real ecosystem, it doesn't belong in B
 The goal is assembly, not invention: pick the best parts, make them fit together
 on top of Go, and ship.
 
+### One idiomatic way
+
+For any given problem, there should be one obvious way to write it in Bak.
+Uniformity across codebases matters more than individual expressiveness.
+This means making hard choices — sometimes cutting a feature that is
+individually good but creates ambiguity about "the right way".
+
 ### Better ergonomics, without going too far
 
 We borrow selectively — only where a feature genuinely reduces friction.

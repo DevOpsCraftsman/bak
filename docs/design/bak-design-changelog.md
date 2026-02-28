@@ -52,6 +52,14 @@ The original discussion is preserved as-is in `2026-02-27-bak-language-design-di
 | `Option<T>` only    | Consistent, full FP                 | Verbose for `if x != null` patterns          |
 | Both with bridge    | Best of both, developer choice      | Two ways to represent absence (explain once) |
 
+**Open question — tension with "one idiomatic way" principle:**
+The dual model gives two ways to represent the absence of a value.
+This directly contradicts the design goal of having one obvious way to do things.
+Additionally, `T?` is significantly more token-efficient than `Option<T>` —
+which matters for AI-assisted coding. It may be better to keep only `T?` with
+full FP methods (`map`, `flatMap`, `filter`) attached directly to the nullable type,
+eliminating the need for `Option<T>` entirely. Needs further evaluation.
+
 ### Change 3: Result<T, E> primary, Either<L, R> in stdlib
 
 **Before:** Only `Result<T, E>` existed.
