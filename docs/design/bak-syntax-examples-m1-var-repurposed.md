@@ -1,0 +1,788 @@
+# Bak Language — Syntax Examples (M1: `:=` + `var` Repurposed)
+
+Complete reference using the **M1 syntax**: `:=` immutable by default, `var` repurposed
+as a pure mutability marker, `fn` keyword, no colon in type annotations.
+
+**Difference with M4**: in M1, `var` ONLY means "mutable binding". It does NOT support
+Go's uninitialized zero-value pattern (`var x Int`). M4 keeps Go's full `var` semantics.
+
+---
+
+## 1. Variables and Type Inference
+
+```go
+// Immutable (default) — no keyword needed
+x := 42
+name := "Alice"
+pi := 3.14
+flag := true
+
+// With explicit type
+x Int := 42
+name String := "Alice"
+
+// Mutable — var keyword (repurposed = "mutable binding")
+var count := 0
+count = counter + 1
+
+// With explicit type
+var count Int := 0
+count = 1
+```
+
+---
+
+## 2. Null Safety
+
+```go
+// Non-null by default
+name := "Alice"
+
+// Nullable — must use T?
+maybeName String? := null
+anotherName String? := "Bob"
+
+// Safe call operator
+len Int? := maybeName?.length
+
+// Elvis operator
+displayName := maybeName ?: "Anonymous"
+
+// Chained safe calls
+city String? := user?.address?.city
+
+// Non-null assertion — throws if null
+forced String := maybeName!!
+
+// Safe call + elvis
+upperName := maybeName?.uppercase() ?: "UNKNOWN"
+```
+
+---
+
+## 3. Option Type (Some / None)
+
+```go
+present Option<Int> := Some(42)
+absent Option<Int> := None
+
+match present {
+    is Some(value) -> println("Got: $value")
+    is None -> println("Nothing here")
+}
+
+// FP composition
+doubled := present.map { it * 2 }           // Some(84)
+nothing := absent.map { it * 2 }            // None
+trimmed := present.filter { it > 10 }       // Some(42)
+chained := present.flatMap { lookupName(it) }
+
+value := present.unwrapOr(0)                // 42
+fallback := absent.unwrapOr(0)              // 0
+
+// Bridge: T? ↔ Option<T>
+name String? := "Alice"
+opt Option<String> := name.toOption()        // Some("Alice")
+nullable String? := opt.toNullable()         // "Alice"
+```
+
+---
+
+## 4. Result Type and Error Handling
+
+```go
+fn readFile(path String) Result<String, IOError> {
+    // ...
+}
+
+match readFile("config.yaml") {
+    is Ok(content) -> println("Content: $content")
+    is Err(e) -> println("Failed: ${e.message}")
+}
+
+// ? operator — early return on error
+fn loadConfig(path String) Result<Config, AppError> {
+    content := readFile(path)?
+    parsed := parseYaml(content)?
+    validated := validate(parsed)?
+    return Ok(validated)
+}
+
+// Result API
+result Result<User, DBError> := findUser(42)
+
+result.map { it.name }
+result.flatMap { validate(it) }
+result.mapError { AppError.from(it) }
+result.recover { defaultUser }
+result.fold(
+    onOk  = { println("Found: ${it.name}") },
+    onErr = { println("Failed: ${it.message}") }
+)
+result.getOrElse { defaultUser }
+
+// Go interop — (T, error) auto-wraps
+import "os"
+
+fn readGoFile(path String) Result<[]byte, Error> {
+    return os.ReadFile(path)
+}
+```
+
+---
+
+## 4b. Either Type (Standard Library)
+
+```go
+import "bak/either"
+
+fn parseInput(raw String) Either<Int, String> {
+    asInt := raw.toIntOrNull()
+    return if asInt != null { Either.left(asInt) } else { Either.right(raw) }
+}
+
+parsed Either<Int, String> := parseInput("hello")
+
+parsed.fold(
+    ifLeft  = { println("Got number: $it") },
+    ifRight = { println("Got text: $it") }
+)
+parsed.map { it.uppercase() }
+parsed.mapLeft { it * 2 }
+parsed.swap()
+```
+
+---
+
+## 5. Functions
+
+```go
+fn add(a Int, b Int) Int {
+    return a + b
+}
+
+fn add(a Int, b Int) Int = a + b
+
+fn multiply(a Int, b Int) = a * b
+
+fn greet(name String, greeting String = "Hello") String {
+    return "$greeting, $name!"
+}
+
+msg1 := greet("Alice")
+msg2 := greet("Bob", "Hi")
+msg3 := greet(greeting = "Hey", name = "Charlie")
+
+fn log(message String) {
+    println(message)
+}
+```
+
+---
+
+## 6. String Interpolation
+
+```go
+name := "Alice"
+age := 30
+
+println("Hello, $name")
+println("In 5 years: ${age + 5}")
+
+json := """
+    {
+        "name": "$name",
+        "age": $age
+    }
+"""
+```
+
+---
+
+## 7. Data Classes
+
+```go
+data class User(name String, age Int)
+
+alice := User("Alice", 30)
+bob := User("Bob", 25)
+
+println(alice)                              // User(name=Alice, age=30)
+println(alice == User("Alice", 30))         // true
+
+olderAlice := alice.copy(age = 31)
+
+(name, age) := alice
+println("$name is $age years old")
+
+data class Address(street String, city String, zip String)
+data class Person(name String, address Address)
+```
+
+---
+
+## 8. Interfaces (with Default Implementations)
+
+```go
+interface Drawable {
+    fn draw()
+    fn boundingBox() Rect
+}
+
+interface Serializable {
+    fn serialize() []byte
+    fn contentType() String = "application/json"
+    fn serializeToString() String = String(serialize())
+}
+
+data class Circle(x Float, y Float, radius Float) : Drawable {
+    override fn draw() {
+        // drawing logic
+    }
+    override fn boundingBox() Rect {
+        return Rect(x - radius, y - radius, radius * 2, radius * 2)
+    }
+}
+
+data class Widget(id String) : Drawable, Serializable {
+    override fn draw() { /* ... */ }
+    override fn boundingBox() = Rect(0, 0, 100, 50)
+    override fn serialize() = id.toByteArray()
+}
+
+fn render(item Drawable) {
+    item.draw()
+}
+
+fn <T : Serializable> save(item T) {
+    bytes := item.serialize()
+    writeToFile(bytes)
+}
+```
+
+---
+
+## 9. Sealed Classes and Pattern Matching
+
+```go
+sealed class Shape {
+    data class Circle(radius Float)
+    data class Rectangle(width Float, height Float)
+    data class Triangle(base Float, height Float)
+}
+
+fn area(shape Shape) Float = match shape {
+    is Shape.Circle(r) -> 3.14159 * r * r
+    is Shape.Rectangle(w, h) -> w * h
+    is Shape.Triangle(b, h) -> 0.5 * b * h
+}
+
+sealed class AuthResult {
+    data class Success(user User, token String)
+    data class Failure(reason String)
+    data class TwoFactorRequired(challengeId String)
+}
+
+fn handleAuth(result AuthResult) {
+    match result {
+        is AuthResult.Success(user, token) -> {
+            setSession(user, token)
+            redirect("/dashboard")
+        }
+        is AuthResult.Failure(reason) -> showError(reason)
+        is AuthResult.TwoFactorRequired(id) -> show2FAPrompt(id)
+    }
+}
+
+fn classify(value Int) String = when {
+    value < 0   -> "negative"
+    value == 0  -> "zero"
+    value < 100 -> "small"
+    else        -> "large"
+}
+```
+
+---
+
+## 10. Smart Casts
+
+```go
+fn describe(x Any) String {
+    if x is String {
+        return "String of length ${x.length}"
+    }
+    if x is Int {
+        return "Integer: ${x * 2}"
+    }
+    return "Unknown"
+}
+
+fn process(input Any) {
+    match input {
+        is String -> println(input.uppercase())
+        is Int    -> println(input + 1)
+        is List   -> println(input.size)
+    }
+}
+
+fn safeProcess(value String?) {
+    if value != null {
+        println(value.length)
+    }
+}
+```
+
+---
+
+## 11. Extension Functions
+
+```go
+fn String.isPalindrome() Bool {
+    cleaned := this.lowercase().filter { it.isLetter() }
+    return cleaned == cleaned.reversed()
+}
+
+result := "racecar".isPalindrome()
+
+fn Int.isEven() Bool = this % 2 == 0
+
+fn http.Request.bearerToken() String? {
+    header := this.Header.Get("Authorization")
+    return if header.startsWith("Bearer ") { header.substring(7) } else { null }
+}
+
+fn <T> List<T>.secondOrNull() T? {
+    return if this.size >= 2 { this[1] } else { null }
+}
+```
+
+---
+
+## 12. Lambdas and Higher-Order Functions
+
+```go
+double := { x Int -> x * 2 }
+sum := { a Int, b Int -> a + b }
+
+fn apply(value Int, transform (Int) -> Int) Int {
+    return transform(value)
+}
+result := apply(5, double)
+
+numbers := listOf(1, 2, 3, 4, 5)
+
+doubled := numbers.map { it * 2 }
+evens := numbers.filter { it % 2 == 0 }
+total := numbers.reduce { acc, n -> acc + n }
+
+result := numbers
+    .filter { it > 2 }
+    .map { it * 10 }
+    .reduce { acc, n -> acc + n }
+
+numbers.forEach { println(it) }
+
+fn isPositive(n Int) Bool = n > 0
+positives := numbers.filter(::isPositive)
+```
+
+---
+
+## 13. Enums
+
+```go
+enum class Direction {
+    North, South, East, West
+}
+
+enum class Color(hex String) {
+    Red("#FF0000"),
+    Green("#00FF00"),
+    Blue("#0000FF")
+}
+
+dir := Direction.North
+color := Color.Red
+println(color.hex)
+
+fn arrow(dir Direction) String = match dir {
+    Direction.North -> "↑"
+    Direction.South -> "↓"
+    Direction.East  -> "→"
+    Direction.West  -> "←"
+}
+```
+
+---
+
+## 14. Generics
+
+```go
+fn <T> first(list List<T>) Option<T> {
+    return if list.isEmpty() { None } else { Some(list[0]) }
+}
+
+fn <T : Comparable<T>> max(a T, b T) T = if a > b { a } else { b }
+
+data class Pair<A, B>(first A, second B)
+
+interface Repository<T> {
+    fn findById(id String) Result<T, Error>
+    fn save(entity T) Result<Unit, Error>
+    fn delete(id String) Result<Unit, Error>
+}
+
+data class UserRepo(db Database) : Repository<User> {
+    override fn findById(id String) Result<User, Error> {
+        return db.query("SELECT * FROM users WHERE id = ?", id)
+    }
+    override fn save(entity User) Result<Unit, Error> {
+        return db.exec("INSERT INTO users ...", entity)
+    }
+    override fn delete(id String) Result<Unit, Error> {
+        return db.exec("DELETE FROM users WHERE id = ?", id)
+    }
+}
+```
+
+---
+
+## 15. Ranges
+
+```go
+for i in 0..5 {
+    println(i)
+}
+
+for i in 0 until 5 {
+    println(i)
+}
+
+for i in 0..10 step 2 {
+    println(i)
+}
+
+for i in 10 downTo 0 {
+    println(i)
+}
+
+age := 25
+if age in 18..65 {
+    println("Working age")
+}
+```
+
+---
+
+## 16. Destructuring Declarations
+
+```go
+data class Point(x Float, y Float)
+(x, y) := Point(3.0, 4.0)
+
+(name, score) := Pair("Alice", 95)
+
+scores := mapOf("Alice" to 95, "Bob" to 87)
+for (name, score) in scores {
+    println("$name: $score")
+}
+
+(_, age) := User("Alice", 30)
+
+match findUser(42) {
+    is Some(user) -> {
+        (name, age) := user
+        println("$name is $age")
+    }
+    is None -> println("Not found")
+}
+```
+
+---
+
+## 17. Operator Overloading
+
+```go
+data class Vec2(x Float, y Float) {
+    operator fn plus(other Vec2) Vec2 = Vec2(x + other.x, y + other.y)
+    operator fn minus(other Vec2) Vec2 = Vec2(x - other.x, y - other.y)
+    operator fn times(scalar Float) Vec2 = Vec2(x * scalar, y * scalar)
+    operator fn get(index Int) Float = match index {
+        0 -> x
+        1 -> y
+        else -> throw IndexOutOfBoundsException()
+    }
+}
+
+a := Vec2(1.0, 2.0)
+b := Vec2(3.0, 4.0)
+c := a + b
+d := a * 2.0
+xVal := a[0]
+```
+
+---
+
+## 18. Properties (Custom Getters / Setters)
+
+```go
+data class Temperature(celsius Float) {
+    fahrenheit Float
+        get() = celsius * 9.0 / 5.0 + 32.0
+
+    kelvin Float
+        get() = celsius + 273.15
+}
+
+t := Temperature(100.0)
+println(t.fahrenheit)
+println(t.kelvin)
+
+class BoundedCounter {
+    var value Int := 0
+        set(newValue) {
+            field = newValue.coerceIn(0, 100)
+        }
+}
+
+counter := BoundedCounter()
+counter.value = 150
+println(counter.value)                    // 100
+```
+
+---
+
+## 19. Go Concurrency (Preserved)
+
+```go
+go {
+    println("Running in a goroutine")
+}
+
+ch := Channel<String>(10)
+
+go {
+    ch.send("hello")
+    ch.send("world")
+    ch.close()
+}
+
+for msg in ch {
+    println(msg)
+}
+
+ch1 := Channel<String>()
+ch2 := Channel<Int>()
+
+select {
+    ch1.onReceive { msg -> println("Got string: $msg") }
+    ch2.onReceive { num -> println("Got number: $num") }
+}
+
+fn processFile(path String) Result<Unit, Error> {
+    file := openFile(path)?
+    defer { file.close() }
+
+    data := file.readAll()?
+    process(data)
+    return Ok(Unit)
+}
+```
+
+---
+
+## 20. Go Interop
+
+```go
+import "fmt"
+import "net/http"
+import "encoding/json"
+import "github.com/gorilla/mux"
+
+fn startServer(port Int) {
+    router := mux.NewRouter()
+
+    router.HandleFunc("/users/{id}") { w, r ->
+        vars := mux.Vars(r)
+        id String? := vars["id"]
+
+        match findUser(id ?: "") {
+            is Ok(user) -> json.NewEncoder(w).Encode(user)
+            is Err(e) -> {
+                w.WriteHeader(404)
+                fmt.Fprintf(w, "Not found: %s", e)
+            }
+        }
+    }
+
+    fmt.Printf("Listening on :%d\n", port)
+    http.ListenAndServe(":$port", router)
+}
+
+fn readConfig() Result<Config, Error> {
+    data := os.ReadFile("config.json")?
+    config := json.Unmarshal(data)?
+    return Ok(config)
+}
+
+fn add(a Int, b Int) Int = a + b
+// Generates: func Add(a int, b int) int { return a + b }
+```
+
+---
+
+## 21. Visibility (Go Conventions)
+
+```go
+// Uppercase = exported
+fn ProcessOrder(order Order) Result<Receipt, Error> { /* ... */ }
+data class User(Name String, Email String)
+
+// Lowercase = unexported
+fn validateEmail(email String) Bool { /* ... */ }
+data class cache(entries Map<String, Any>)
+```
+
+---
+
+## 22. Scope Functions (Standard Library)
+
+```go
+length := "hello".let { it.length }
+
+user := createUser("Alice").also {
+    println("Created user: ${it.name}")
+    logAudit("user_created", it.id)
+}
+
+config := Config().apply {
+    timeout = 30
+    retries = 3
+    baseUrl = "https://api.example.com"
+}
+
+description := with(user) {
+    "$name is $age years old and lives in $city"
+}
+
+result := service.run {
+    connect()
+    fetchData()
+}
+```
+
+---
+
+## 23. Full Example: A Complete Bak Program
+
+```go
+import "net/http"
+import "encoding/json"
+import "log"
+
+// --- Domain Model ---
+
+data class Todo(
+    id String,
+    title String,
+    var completed Bool = false
+)
+
+sealed class TodoError {
+    data class NotFound(id String)
+    data class ValidationFailed(message String)
+    data class StorageError(cause Error)
+}
+
+// --- Repository ---
+
+interface TodoRepository {
+    fn findById(id String) Result<Todo, TodoError>
+    fn findAll() Result<List<Todo>, TodoError>
+    fn save(todo Todo) Result<Todo, TodoError>
+    fn delete(id String) Result<Unit, TodoError>
+}
+
+// --- Service ---
+
+data class TodoService(repo TodoRepository) {
+
+    fn createTodo(title String) Result<Todo, TodoError> {
+        if title.isBlank() {
+            return Err(TodoError.ValidationFailed("Title cannot be blank"))
+        }
+        todo := Todo(
+            id = generateId(),
+            title = title.trim()
+        )
+        return repo.save(todo)
+    }
+
+    fn completeTodo(id String) Result<Todo, TodoError> {
+        todo := repo.findById(id)?
+        updated := todo.copy(completed = true)
+        return repo.save(updated)
+    }
+
+    fn listActive() Result<List<Todo>, TodoError> {
+        all := repo.findAll()?
+        return Ok(all.filter { !it.completed })
+    }
+}
+
+// --- HTTP Handler ---
+
+fn todoHandler(service TodoService) http.Handler {
+    mux := http.NewServeMux()
+
+    mux.HandleFunc("GET /todos") { w, r ->
+        match service.listActive() {
+            is Ok(todos) -> {
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(todos)
+            }
+            is Err(e) -> {
+                w.WriteHeader(500)
+                log.Printf("Error listing todos: %v", e)
+            }
+        }
+    }
+
+    mux.HandleFunc("POST /todos") { w, r ->
+        title := r.FormValue("title")
+        match service.createTodo(title) {
+            is Ok(todo) -> {
+                w.WriteHeader(201)
+                json.NewEncoder(w).Encode(todo)
+            }
+            is Err(e) -> match e {
+                is TodoError.ValidationFailed(msg) -> {
+                    w.WriteHeader(400)
+                    fmt.Fprintf(w, msg)
+                }
+                else -> w.WriteHeader(500)
+            }
+        }
+    }
+
+    return mux
+}
+
+// --- Main ---
+
+fn main() {
+    repo := InMemoryTodoRepo()
+    service := TodoService(repo)
+    handler := todoHandler(service)
+
+    var ch := Channel<Error>()
+
+    go {
+        log.Println("Starting server on :8080")
+        ch.send(http.ListenAndServe(":8080", handler))
+    }
+
+    err := ch.receive()
+    log.Fatal(err)
+}
+```
